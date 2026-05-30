@@ -35,12 +35,22 @@ DB_PATH = os.path.join(
     "tickets.db"
 )
 
-connection = sqlite3.connect(
-    DB_PATH,
-    check_same_thread=False
-)
+
+def get_connection():
+
+    return sqlite3.connect(
+        DB_PATH,
+        check_same_thread=False
+    )
+
+
+connection = get_connection()
 
 cursor = connection.cursor()
+
+# =========================================================
+# CREATE TABLE
+# =========================================================
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS processed_tickets (
@@ -51,12 +61,13 @@ CREATE TABLE IF NOT EXISTS processed_tickets (
     assigned_engineer TEXT,
     priority TEXT,
     status TEXT,
-    processed_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    processed_time TEXT
 )
 """)
 
 connection.commit()
 
+connection.close()
 
 # =========================================================
 # INITIALIZE SERVICES
@@ -78,7 +89,6 @@ database_service = DatabaseService(
 
 notification_service = NotificationService()
 
-
 # =========================================================
 # INITIALIZE AGENTS
 # =========================================================
@@ -93,10 +103,10 @@ notification_agent = NotificationAgent()
 
 ai_routing_agent = AIRoutingAgent()
 
-
 # =========================================================
 # SAVE TO SQLITE
 # =========================================================
+
 
 def save_ticket_to_database(
         ticket,
@@ -106,6 +116,10 @@ def save_ticket_to_database(
 ):
 
     try:
+
+        conn = get_connection()
+
+        cursor = conn.cursor()
 
         cursor.execute("""
         INSERT OR IGNORE INTO processed_tickets (
@@ -120,27 +134,29 @@ def save_ticket_to_database(
         VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
 
-            ticket["ticket_number"],
+            ticket.get("ticket_number"),
 
-            ticket["short_description"],
+            ticket.get("short_description"),
 
             assignment_group,
 
             engineer,
 
-            ticket["priority"],
+            ticket.get("priority"),
 
             status,
 
-            datetime.now()
+            datetime.now().isoformat()
 
         ))
 
-        connection.commit()
+        conn.commit()
+
+        conn.close()
 
         logger.info(
             f"Saved ticket "
-            f"{ticket['ticket_number']} "
+            f"{ticket.get('ticket_number')} "
             f"to database"
         )
 
@@ -150,10 +166,10 @@ def save_ticket_to_database(
             f"Database save error: {str(e)}"
         )
 
-
 # =========================================================
 # PROCESS TICKETS
 # =========================================================
+
 
 def process_tickets():
 
@@ -202,23 +218,27 @@ def process_tickets():
 
         try:
 
+            ticket_number = (
+                ticket.get("ticket_number")
+            )
+
             # =============================================
             # DUPLICATE CHECK
             # =============================================
 
             if database_service.is_ticket_processed(
-                    ticket["ticket_number"]
+                    ticket_number
             ):
 
                 print(
                     f"\nTicket "
-                    f"{ticket['ticket_number']} "
+                    f"{ticket_number} "
                     f"already processed"
                 )
 
                 logger.info(
                     f"Duplicate ticket skipped: "
-                    f"{ticket['ticket_number']}"
+                    f"{ticket_number}"
                 )
 
                 continue
@@ -227,12 +247,12 @@ def process_tickets():
 
             print(
                 f"Processing Ticket: "
-                f"{ticket['ticket_number']}"
+                f"{ticket_number}"
             )
 
             logger.info(
                 f"Processing "
-                f"{ticket['ticket_number']}"
+                f"{ticket_number}"
             )
 
             # =============================================
@@ -242,16 +262,25 @@ def process_tickets():
             ai_result = (
                 ai_routing_agent
                 .predict_assignment_group(
-                    ticket["short_description"]
+                    ticket.get(
+                        "short_description",
+                        ""
+                    )
                 )
             )
 
             predicted_group = (
-                ai_result["assignment_group"]
+                ai_result.get(
+                    "assignment_group",
+                    "Unknown"
+                )
             )
 
             confidence = (
-                ai_result["confidence"]
+                ai_result.get(
+                    "confidence",
+                    0
+                )
             )
 
             print(
@@ -270,7 +299,7 @@ def process_tickets():
             )
 
             # =============================================
-            # LOW CONFIDENCE HANDLING
+            # LOW CONFIDENCE
             # =============================================
 
             if confidence < 70:
@@ -281,14 +310,19 @@ def process_tickets():
 
                 logger.warning(
                     f"Low confidence routing for "
-                    f"{ticket['ticket_number']}"
+                    f"{ticket_number}"
                 )
 
                 save_ticket_to_database(
+
                     ticket,
+
                     predicted_group,
+
                     "Manual Review",
+
                     "Escalated"
+
                 )
 
                 continue
@@ -320,7 +354,10 @@ def process_tickets():
             if engineer_data:
 
                 engineer_name = (
-                    engineer_data["engineer"]
+                    engineer_data.get(
+                        "engineer",
+                        "Unknown"
+                    )
                 )
 
                 assignment_agent.assign_ticket(
@@ -330,7 +367,7 @@ def process_tickets():
 
                 logger.info(
                     f"Ticket "
-                    f"{ticket['ticket_number']} "
+                    f"{ticket_number} "
                     f"assigned to "
                     f"{engineer_name}"
                 )
@@ -349,7 +386,7 @@ def process_tickets():
                     notification_service,
 
                     f"Ticket "
-                    f"{ticket['ticket_number']} "
+                    f"{ticket_number} "
                     f"assigned to "
                     f"{engineer_name}"
 
@@ -375,13 +412,13 @@ def process_tickets():
                 # MARK AS PROCESSED
                 # =========================================
 
-                database_service.save_processed_ticket(
+                # database_service.save_processed_ticket(
 
-                    ticket["ticket_number"],
+                #     ticket_number,
 
-                    engineer_name
+                #     engineer_name
 
-                )
+                # )
 
             else:
 
@@ -391,7 +428,7 @@ def process_tickets():
 
                 logger.warning(
                     f"No engineer found for "
-                    f"{ticket['ticket_number']}"
+                    f"{ticket_number}"
                 )
 
                 save_ticket_to_database(
@@ -410,19 +447,19 @@ def process_tickets():
 
             logger.error(
                 f"Error processing ticket "
-                f"{ticket['ticket_number']}: "
+                f"{ticket.get('ticket_number')}: "
                 f"{str(e)}"
             )
 
             print(
                 f"Error processing "
-                f"{ticket['ticket_number']}"
+                f"{ticket.get('ticket_number')}"
             )
-
 
 # =========================================================
 # MAIN
 # =========================================================
+
 
 def main():
 
@@ -446,10 +483,10 @@ def main():
         process_tickets
     )
 
-
 # =========================================================
 # ENTRY POINT
 # =========================================================
+
 
 if __name__ == "__main__":
 

@@ -430,3 +430,4 @@ st.caption(
     f"Last Updated: "
     f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 )
+
