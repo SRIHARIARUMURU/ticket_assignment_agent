@@ -86,9 +86,10 @@ class DatabaseService:
             (
                 ticket_number,
                 assigned_engineer,
-                str(datetime.now())
+                str(datetime.now().isoformat())
             )
 
         )
 
         self.connection.commit()
+    

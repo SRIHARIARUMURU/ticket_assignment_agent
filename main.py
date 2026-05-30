@@ -12,12 +12,56 @@ from agents.ai_routing_agent import AIRoutingAgent
 
 from utils.logger import setup_logger
 
+import sqlite3
+import os
+from datetime import datetime
 
-# Initialize Logger
+
+# =========================================================
+# LOGGER
+# =========================================================
+
 logger = setup_logger()
 
 
-# Initialize Services
+# =========================================================
+# DATABASE SETUP
+# =========================================================
+
+os.makedirs("database", exist_ok=True)
+
+DB_PATH = os.path.join(
+    "database",
+    "tickets.db"
+)
+
+connection = sqlite3.connect(
+    DB_PATH,
+    check_same_thread=False
+)
+
+cursor = connection.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS processed_tickets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_number TEXT UNIQUE,
+    short_description TEXT,
+    assignment_group TEXT,
+    assigned_engineer TEXT,
+    priority TEXT,
+    status TEXT,
+    processed_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
+connection.commit()
+
+
+# =========================================================
+# INITIALIZE SERVICES
+# =========================================================
+
 excel_service = ExcelService(
     "data/shifts.xlsx"
 )
@@ -29,15 +73,16 @@ servicenow_service = ServiceNowService(
 )
 
 database_service = DatabaseService(
-    "database/tickets.db"
+    DB_PATH
 )
-
-database_service.create_table()
 
 notification_service = NotificationService()
 
 
-# Initialize Agents
+# =========================================================
+# INITIALIZE AGENTS
+# =========================================================
+
 routing_agent = RoutingAgent()
 
 assignment_agent = AssignmentAgent()
@@ -49,6 +94,67 @@ notification_agent = NotificationAgent()
 ai_routing_agent = AIRoutingAgent()
 
 
+# =========================================================
+# SAVE TO SQLITE
+# =========================================================
+
+def save_ticket_to_database(
+        ticket,
+        assignment_group,
+        engineer,
+        status="Processed"
+):
+
+    try:
+
+        cursor.execute("""
+        INSERT OR IGNORE INTO processed_tickets (
+            ticket_number,
+            short_description,
+            assignment_group,
+            assigned_engineer,
+            priority,
+            status,
+            processed_time
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+
+            ticket["ticket_number"],
+
+            ticket["short_description"],
+
+            assignment_group,
+
+            engineer,
+
+            ticket["priority"],
+
+            status,
+
+            datetime.now()
+
+        ))
+
+        connection.commit()
+
+        logger.info(
+            f"Saved ticket "
+            f"{ticket['ticket_number']} "
+            f"to database"
+        )
+
+    except Exception as e:
+
+        logger.error(
+            f"Database save error: {str(e)}"
+        )
+
+
+# =========================================================
+# PROCESS TICKETS
+# =========================================================
+
 def process_tickets():
 
     logger.info(
@@ -59,7 +165,10 @@ def process_tickets():
         "\nChecking for new tickets..."
     )
 
-    # Detect Current Shift
+    # =====================================================
+    # CURRENT SHIFT
+    # =====================================================
+
     current_shift = (
         shift_service.get_current_shift()
     )
@@ -69,159 +178,264 @@ def process_tickets():
         f"{current_shift}"
     )
 
-    # Fetch Tickets
+    logger.info(
+        f"Current Shift: {current_shift}"
+    )
+
+    # =====================================================
+    # FETCH TICKETS
+    # =====================================================
+
     tickets = (
         servicenow_service.get_new_tickets()
     )
 
-    # Process Each Ticket
+    print(
+        f"\nFetched {len(tickets)} tickets"
+    )
+
+    # =====================================================
+    # PROCESS EACH TICKET
+    # =====================================================
+
     for ticket in tickets:
 
-        # Duplicate Protection
-        if database_service.is_ticket_processed(
-                ticket["ticket_number"]
-        ):
+        try:
+
+            # =============================================
+            # DUPLICATE CHECK
+            # =============================================
+
+            if database_service.is_ticket_processed(
+                    ticket["ticket_number"]
+            ):
+
+                print(
+                    f"\nTicket "
+                    f"{ticket['ticket_number']} "
+                    f"already processed"
+                )
+
+                logger.info(
+                    f"Duplicate ticket skipped: "
+                    f"{ticket['ticket_number']}"
+                )
+
+                continue
+
+            print("\n--------------------------------")
 
             print(
-                f"\nTicket "
-                f"{ticket['ticket_number']} "
-                f"already processed"
+                f"Processing Ticket: "
+                f"{ticket['ticket_number']}"
             )
 
             logger.info(
-
-                f"Ticket "
-                f"{ticket['ticket_number']} "
-                f"already processed"
-
-            )
-
-            continue
-
-        print("\n--------------------------------")
-
-        print(
-            f"Processing Ticket: "
-            f"{ticket['ticket_number']}"
-        )
-
-        # AI Prediction
-        ai_result = (
-
-            ai_routing_agent.predict_assignment_group(
-
-                ticket["short_description"]
-
-            )
-
-        )
-
-        predicted_group = (
-            ai_result["assignment_group"]
-        )
-
-        confidence = (
-            ai_result["confidence"]
-        )
-
-        print(
-            f"Predicted Assignment Group: "
-            f"{predicted_group}"
-        )
-
-        print(
-            f"Confidence Score: "
-            f"{confidence}%"
-        )
-
-        # Low confidence handling
-        if confidence < 70:
-
-            print(
-                "Low Confidence Detected"
-            )
-
-            print(
-                "Sending Ticket For Manual Review"
-            )
-
-            logger.warning(
-
-                f"Low confidence routing for "
+                f"Processing "
                 f"{ticket['ticket_number']}"
-
             )
 
-            continue
+            # =============================================
+            # AI ROUTING
+            # =============================================
 
-        # Update ticket with predicted group
-        ticket["assignment_group"] = predicted_group
-
-        # Route Ticket
-        engineer_data = (
-            routing_agent.route_ticket(
-                ticket,
-                current_shift,
-                excel_service
+            ai_result = (
+                ai_routing_agent
+                .predict_assignment_group(
+                    ticket["short_description"]
+                )
             )
-        )
 
-        # Assign Ticket
-        if engineer_data:
+            predicted_group = (
+                ai_result["assignment_group"]
+            )
 
-            assignment_agent.assign_ticket(
-                ticket,
-                engineer_data
+            confidence = (
+                ai_result["confidence"]
+            )
+
+            print(
+                f"Predicted Assignment Group: "
+                f"{predicted_group}"
+            )
+
+            print(
+                f"Confidence Score: "
+                f"{confidence}%"
             )
 
             logger.info(
-
-                f"Ticket "
-                f"{ticket['ticket_number']} "
-                f"assigned to "
-                f"{engineer_data['engineer']}"
-
+                f"Predicted Group: "
+                f"{predicted_group}"
             )
 
-            # Send Notification
-            notification_agent.notify(
+            # =============================================
+            # LOW CONFIDENCE HANDLING
+            # =============================================
 
-                notification_service,
+            if confidence < 70:
 
-                f"Ticket "
-                f"{ticket['ticket_number']} "
-                f"assigned to "
-                f"{engineer_data['engineer']}"
+                print(
+                    "Low Confidence Detected"
+                )
 
+                logger.warning(
+                    f"Low confidence routing for "
+                    f"{ticket['ticket_number']}"
+                )
+
+                save_ticket_to_database(
+                    ticket,
+                    predicted_group,
+                    "Manual Review",
+                    "Escalated"
+                )
+
+                continue
+
+            # =============================================
+            # UPDATE TICKET
+            # =============================================
+
+            ticket["assignment_group"] = (
+                predicted_group
             )
 
-            # Save Processed Ticket
-            database_service.save_processed_ticket(
+            # =============================================
+            # ROUTE TICKET
+            # =============================================
 
-                ticket["ticket_number"],
-
-                engineer_data["engineer"]
-
+            engineer_data = (
+                routing_agent.route_ticket(
+                    ticket,
+                    current_shift,
+                    excel_service
+                )
             )
 
-        else:
+            # =============================================
+            # ASSIGN ENGINEER
+            # =============================================
+
+            if engineer_data:
+
+                engineer_name = (
+                    engineer_data["engineer"]
+                )
+
+                assignment_agent.assign_ticket(
+                    ticket,
+                    engineer_data
+                )
+
+                logger.info(
+                    f"Ticket "
+                    f"{ticket['ticket_number']} "
+                    f"assigned to "
+                    f"{engineer_name}"
+                )
+
+                print(
+                    f"Assigned Engineer: "
+                    f"{engineer_name}"
+                )
+
+                # =========================================
+                # SEND NOTIFICATION
+                # =========================================
+
+                notification_agent.notify(
+
+                    notification_service,
+
+                    f"Ticket "
+                    f"{ticket['ticket_number']} "
+                    f"assigned to "
+                    f"{engineer_name}"
+
+                )
+
+                # =========================================
+                # SAVE TO DATABASE
+                # =========================================
+
+                save_ticket_to_database(
+
+                    ticket,
+
+                    predicted_group,
+
+                    engineer_name,
+
+                    "Processed"
+
+                )
+
+                # =========================================
+                # MARK AS PROCESSED
+                # =========================================
+
+                database_service.save_processed_ticket(
+
+                    ticket["ticket_number"],
+
+                    engineer_name
+
+                )
+
+            else:
+
+                print(
+                    "No Engineer Found"
+                )
+
+                logger.warning(
+                    f"No engineer found for "
+                    f"{ticket['ticket_number']}"
+                )
+
+                save_ticket_to_database(
+
+                    ticket,
+
+                    predicted_group,
+
+                    "Unassigned",
+
+                    "Pending"
+
+                )
+
+        except Exception as e:
+
+            logger.error(
+                f"Error processing ticket "
+                f"{ticket['ticket_number']}: "
+                f"{str(e)}"
+            )
 
             print(
-                "No Engineer Found"
-            )
-
-            logger.warning(
-
-                f"No engineer found for "
+                f"Error processing "
                 f"{ticket['ticket_number']}"
-
             )
 
+
+# =========================================================
+# MAIN
+# =========================================================
 
 def main():
 
     print(
-        "\nStarting Ticket Assignment Agent..."
+        "\n================================"
+    )
+
+    print(
+        "AI Ticket Assignment Platform"
+    )
+
+    print(
+        "================================"
     )
 
     logger.info(
@@ -232,6 +446,10 @@ def main():
         process_tickets
     )
 
+
+# =========================================================
+# ENTRY POINT
+# =========================================================
 
 if __name__ == "__main__":
 

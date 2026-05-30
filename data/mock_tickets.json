@@ -1,21 +1,70 @@
 [
     {
         "ticket_number": "INC001",
-        "short_description": "Linux server reboot issue",
+        "short_description": "Ubuntu VM inaccessible after patching",
         "priority": "P2",
         "status": "New"
     },
 
     {
         "ticket_number": "INC002",
-        "short_description": "Windows service stopped",
+        "short_description": "IIS website not loading after reboot",
         "priority": "P3",
         "status": "New"
     },
 
     {
         "ticket_number": "INC003",
-        "short_description": "Disk utilization high in Linux server",
+        "short_description": "Oracle database connection timeout",
+        "priority": "P1",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC004",
+        "short_description": "VPN users unable to connect from remote locations",
+        "priority": "P2",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC005",
+        "short_description": "Linux filesystem utilization exceeded 95 percent",
+        "priority": "P1",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC006",
+        "short_description": "Active Directory authentication failure",
+        "priority": "P2",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC007",
+        "short_description": "MySQL replication stopped between primary and secondary servers",
+        "priority": "P1",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC008",
+        "short_description": "Core network switch experiencing intermittent packet loss",
+        "priority": "P1",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC009",
+        "short_description": "Windows service crashed automatically after deployment",
+        "priority": "P3",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC010",
+        "short_description": "Unix server reboot required after kernel panic",
         "priority": "P1",
         "status": "New"
     }
