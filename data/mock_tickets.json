@@ -1,0 +1,22 @@
+[
+    {
+        "ticket_number": "INC001",
+        "short_description": "Linux server reboot issue",
+        "priority": "P2",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC002",
+        "short_description": "Windows service stopped",
+        "priority": "P3",
+        "status": "New"
+    },
+
+    {
+        "ticket_number": "INC003",
+        "short_description": "Disk utilization high in Linux server",
+        "priority": "P1",
+        "status": "New"
+    }
+]
