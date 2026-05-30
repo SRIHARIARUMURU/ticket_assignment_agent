@@ -34,11 +34,16 @@ st.sidebar.write(
 
 
 # Database Connection
-connection = sqlite3.connect(
-    "database/tickets.db"
-)
+os.makedirs("database", exist_ok=True)
+
+DB_PATH = os.path.join("database", "tickets.db")
+
+connection = sqlite3.connect(DB_PATH)
 
 cursor = connection.cursor()
+
+
+
 
 
 # Metrics Section
@@ -163,3 +168,4 @@ st.markdown("---")
 st.caption(
     "Enterprise Agentic AI Platform"
 )
+
